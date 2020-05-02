@@ -1,0 +1,18 @@
+[Unit]
+Description=Musical lights controller written by Isaiah
+After=graphical-session.target
+
+
+[Service]
+BusName=musical-lights-controller
+Type=dbus
+User=isaiah
+Environment=DISPLAY=:0
+WorkingDirectory=/home/isaiah/Documents/lights/
+ExecStart=/usr/bin/python send_music_to_pi.py
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=musical-lights-controller
+
+[Install]
+Alias=musical-lights-controller
