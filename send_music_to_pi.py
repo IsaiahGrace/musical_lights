@@ -22,6 +22,9 @@ REDIRECT_URI = 'http://localhost:8080'
 PORT_NUMBER = 8080
 SCOPE = 'user-read-currently-playing'
 CACHE = '.spotipyoauthcache'
+PI_NAME = 'beacon'
+PI_PATH = "/home/pi/lightRemote/pi/from_old_pi/lights/"
+
 
 readingMode = False
 readingModeTimer = 0
@@ -40,7 +43,7 @@ def handler_stop_signals(signum, frame):
     SHUTDOWN = True
     
     turn_off_lights()
-    print colored('\nSIGINT or SIGTERM, lights turning off','red')    
+    print(colored('\nSIGINT or SIGTERM, lights turning off','red'))
     sys.exit(0)
     
 signal.signal(signal.SIGINT, handler_stop_signals)
@@ -79,12 +82,13 @@ def send_data_to_pi(audio_features):
 
 
 def send_complex_data_to_pi(audio_features):
+    #pp(audio_features)
     f = open('current_song', 'w')
     f.write(json.dumps(audio_features))
     f.close()
     
-    if os.system("ping -q -c 1 -W 1 10.42.0.22 > /dev/null") == 0:
-        os.system('scp -q current_song pi@10.42.0.22:~/Documents/lights/current_song')
+    if os.system("ping -q -c 1 -W 1 " + PI_NAME + " > /dev/null") == 0:
+        os.system('scp -q current_song pi@' + PI_NAME + ':' + PI_PATH + 'current_song')
     
 def send_simple_data_to_pi(audio_features):
     if(audio_features['is_playing']):
@@ -95,23 +99,23 @@ def send_simple_data_to_pi(audio_features):
     f.write(str(valence) + '\n')
     f.close()
 
-    if os.system("ping -q -c 1 -W 1 10.42.0.22 > /dev/null") == 0:
-        os.system("scp -q valence_data pi@10.42.0.22:~/Documents/lights/valence_data")
+    if os.system("ping -q -c 1 -W 1 " + PI_NAME + " > /dev/null") == 0:
+        os.system("scp -q valence_data pi@" + PI_NAME + ':' + PI_PATH + 'valence_data')
         
         
 def send_music_to_pi(mediaPlayer):
     # wait unitl the Pi is online. No point doing anything else if it wont hear us
     count = 0
-    while os.system("ping -q -c 1 -W 1 10.42.0.22 > /dev/null") != 0:
+    while os.system("ping -q -c 1 -W 1 " + PI_NAME + " > /dev/null") != 0:
         message = 'Pi is not responding'
         if count > 0:
-            message = '\033[F' + message + ' (' + str(count) + ')'
-        print colored(message, 'red')
+            message = '\r' + message + ' (' + str(count) + ')'
+        print(colored(message, 'red'),end='')
         count = count + 1
         
         # Time to sleep before checking if the Pi is back online 
         sleepReading(1)
-
+    
     # Check if any music is playing
     if not mediaPlayer.isPlaying():
         turn_off_lights()
@@ -122,8 +126,8 @@ def send_music_to_pi(mediaPlayer):
             while not mediaPlayer.isPlaying():
                 message = 'Spotify is paused'
                 if count > 0:
-                    message = '\033[F' + message + ' (' + str(count) + ')' 
-                print colored(message, 'red')
+                    message = '\r' + message + ' (' + str(count) + ')' 
+                print(colored(message, 'red'),end='')
                 count = count + 1
                 
                 # Time to sleep before checking again if spotify is playing music
@@ -152,7 +156,7 @@ def send_music_to_pi(mediaPlayer):
     
     # Print the name and artist of the song
     try:
-        print results['item']['name'], "--", results['item']['artists'][0]['name']
+        print('\r\n' + results['item']['name'], "--", results['item']['artists'][0]['name'])
     except:
         # This means that I somehow got a Dict with NoneType...
         raise
@@ -165,13 +169,13 @@ def send_music_to_pi(mediaPlayer):
         raise
 
     if audio_features == None:
-        print colored("Error: unable to find audio features. Using random color instead",'red')
+        print(colored("Error: unable to find audio features. Using random color instead",'red'))
         audio_features = dict()
         audio_features['valence'] = random()
         
     # Add some more info to the dict to help out the Pi
-    audio_features['name']       = results['item']['name'].encode('ascii', 'ignore')
-    audio_features['artist']     = results['item']['artists'][0]['name'].encode('ascii', 'ignore')
+    audio_features['name']       = results['item']['name']
+    audio_features['artist']     = results['item']['artists'][0]['name']
     audio_features['is_playing'] = results['is_playing']
         
     # Send the data to the Pi to tell the lights to change color
@@ -180,15 +184,15 @@ def send_music_to_pi(mediaPlayer):
     # Wait until a new track is started OR media is paused OR Pi turns off, then return
     count = 0
     try:
-        while mediaPlayer.song_name().encode('ascii', 'ignore') == audio_features['name'] and mediaPlayer.isPlaying():
+        while mediaPlayer.song_name() == audio_features['name'] and mediaPlayer.isPlaying():
             message = 'Track is playing'
             if count > 0:
-                message = '\033[F' + message + ' (' + str(count) + ')'
+                message = '\r' + message + ' (' + str(count) + ')'
             
-            print colored(message,'green')
+            print(colored(message,'green'), end='')
             count = count + 1
             
-            if os.system("ping -q -c 1 -W 1 10.42.0.22 > /dev/null") != 0:
+            if os.system("ping -q -c 1 -W 1 " + PI_NAME + " > /dev/null") != 0:
                 # The Pi is not listening to us, so it's useless to wait.
                 return
             
@@ -211,9 +215,9 @@ class MediaPlayer:
     def __init__(self, player_name):
         # Get an instance of the dbus session bus, and retrieve
         #  a proxy object for accessing the MediaPlayer
-        #print 'about to get session_bus'
+        #print('about to get session_bus')
         session_bus = dbus.SessionBus()
-        #print 'about to get player_proxy'
+        #print('about to get player_proxy')
         player_proxy = session_bus.get_object(
             'org.mpris.MediaPlayer2.%s' % player_name,
             '/org/mpris/MediaPlayer2')
@@ -221,13 +225,13 @@ class MediaPlayer:
         
         # Apply the interface 'org.freedesktop.DBus.Properties to
         #  the player proxy, allowing us to call .Get() and .GetAll()
-        #print 'about to get player_properties'
+        #print('about to get player_properties')
         self.player_properties = dbus.Interface(player_proxy, 'org.freedesktop.DBus.Properties')
     
     
     # Retrieve the properties from the Player interface, return a song string.
     def song_string(self):
-        #print 'about to get props'
+        #print(about to get props')
         props = self.player_properties.GetAll('org.mpris.MediaPlayer2.Player')
         return "%s, %s, %s" % (props["Metadata"]["xesam:artist"][0],
                                props["Metadata"]["xesam:title"],
@@ -288,10 +292,10 @@ if __name__ == "__main__":
                 # send a message to the Pi to turn off the lights
                 turn_off_lights()
             else:
-                message = '\033[F' + message + ' (' + str(count) + ')'
+                message = '\r' + message + ' (' + str(count) + ')'
                 
             count = count + 1
-            print colored(message,'red')
+            print(colored(message,'red'),end='')
             
             # Time to sleep before checking again if spotify has been opened
             sleepReading(1)
