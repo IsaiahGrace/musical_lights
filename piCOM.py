@@ -1,7 +1,7 @@
 import sys
 
 # This class uses a variety of methods to communicate with the Pi that is controlling the LEDs
-class piCOM:
+class PiCOM:
     PI_USERNAME = 'pi'
     PI_HOSTNAME = 'beacon'
     PI_PATH = "/home/pi/lightRemote/pi/signals/"
