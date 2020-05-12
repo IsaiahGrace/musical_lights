@@ -1,9 +1,0 @@
-about to get session_bus
-about to get player_proxy
-about to get player_properties
-Run -- Delta Rae
-[32mTrack is playing[0m
-[32m[FTrack is playing (1)[0m
-[32m[FTrack is playing (2)[0m
-[31m
-SIGINT or SIGTERM, lights turning off[0m
