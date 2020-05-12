@@ -1,13 +1,12 @@
 import sys
+import json
 
 # This class uses a variety of methods to communicate with the Pi that is controlling the LEDs
-class PiCOM:
-    PI_USERNAME = 'pi'
-    PI_HOSTNAME = 'beacon'
-    PI_PATH = "/home/pi/lightRemote/pi/signals/"
-    
+class PiCOM:   
     def __init__(self):
-        pass
+        self.PI_USERNAME = 'pi'
+        self.PI_HOSTNAME = 'beacon'
+        self.PI_PATH = "/home/pi/lightRemote/pi/signals/"
 
     def ping(self):
         if os.system("ping -q -c 1 -W 1 " + PI_NAME + " > /dev/null") == 0:
@@ -16,6 +15,9 @@ class PiCOM:
             return False
 
     def sendSignal(self, signal, message):
+        if isinstance(message, dict):
+            message = json.dumps(message)
+            
         with open('./signals/' + signal,'w') as f:
             f.write(message)
 
