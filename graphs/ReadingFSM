@@ -1,0 +1,10 @@
+digraph finite_state_machine {
+	rankdir=LR
+	node [shape = circle]
+	IDLE -> IDLE
+	IDLE -> START_READING
+	START_READING -> READING
+	READING -> READING
+	READING -> SHUTDOWN
+	SHUTDOWN -> IDLE
+}

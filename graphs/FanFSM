@@ -1,0 +1,13 @@
+digraph finite_state_machine {
+	rankdir=LR
+	node [shape = circle]
+	IDLE -> IDLE
+	IDLE -> MUSIC
+	IDLE -> FX
+	IDLE -> NOTIFY
+	IDLE -> SHUTDOWN
+	MUSIC -> IDLE
+	FX -> IDLE
+	NOTIFY -> IDLE
+	SHUTDOWN -> IDLE
+}
