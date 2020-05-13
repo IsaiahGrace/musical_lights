@@ -13,7 +13,7 @@ class SongData():
     CACHE = '.spotipyoauthcache'
 
     def __init__(self):
-        self.sp = self.API_object()
+        self.init_sp()
         playing_track = None
         audio_features = None
             
@@ -26,12 +26,17 @@ class SongData():
                                           client_secret=self.CLIENT_SECRET,
                                           redirect_uri=self.REDIRECT_URI)
 
-    def API_object(self):
+    def init_sp(self):
         # construct the Spotipy API object
-        return spotipy.Spotify(auth=self.token())
-
+        self.sp = spotipy.Spotify(auth=self.token())
+        print(colored('Refreshed token from Spotify','yellow'))
+        
     def set_playing_track(self):
-        self.playing_track = self.sp.current_user_playing_track()
+        try:
+            self.playing_track = self.sp.current_user_playing_track()
+        except spotipy.exceptions.SpotifyException:
+            self.init_sp()
+            self.playing_track = self.sp.current_user_playing_track()
         
     def get_playing_track(self):
         # returns a god awful dict from the spotify API
@@ -39,16 +44,23 @@ class SongData():
 
     def set_audio_features(self):
         song_id = self.playing_track['item']['uri']
-        
-        self.audio_features = self.sp.audio_features([song_id])[0]
-        
+
+        # I'd rather use a GOTO here, but Python doesn't have it
+        # I'm not sure what a better solution here is that doesn't involve writing the code twice...
+        try:
+            self.audio_features = self.sp.audio_features([song_id])[0]
+        except spotipy.exceptions.SpotifyException:
+            self.init_sp()
+            self.audio_features = self.sp.audio_features([song_id])[0]
+            
+            
         # Add some more info to the dict to help out the Pi
         self.audio_features['song_id']    = song_id
         self.audio_features['name']       = self.playing_track['item']['name']
         self.audio_features['artist']     = self.playing_track['item']['artists'][0]['name']
         self.audio_features['is_playing'] = self.playing_track['is_playing']
         
-        print(colored('Got info about "' + self.audio_features['name'] + '" from Spotify','yellow'))        
+        print(colored('Got info about "' + self.audio_features['name'] + '" from Spotify','yellow'))
         
     def get_audio_features(self):
         return self.audio_features
