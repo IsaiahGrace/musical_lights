@@ -13,11 +13,13 @@ class DbusManager:
             self.player = None
         return True if self.player else False
 
+    # This method is not used right now, but it might be useful someday
     def get_song_name(self):
         if not self.player:
             return None
         return self.player.song_name()
 
+    # This method is not used right now, but it might be useful someday
     def get_song_info(self):
         if not self.player:
             return None
