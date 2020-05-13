@@ -1,5 +1,7 @@
 import sys
+import os
 import json
+from termcolor import colored
 
 # This class uses a variety of methods to communicate with the Pi that is controlling the LEDs
 class PiCOM:   
@@ -9,7 +11,7 @@ class PiCOM:
         self.PI_PATH = "/home/pi/lightRemote/pi/signals/"
 
     def ping(self):
-        if os.system("ping -q -c 1 -W 1 " + PI_NAME + " > /dev/null") == 0:
+        if os.system("ping -c 1 -W 1 " + self.PI_HOSTNAME + " > /dev/null") == 0: # add -q to quiet
             return True
         else:
             return False
@@ -21,8 +23,10 @@ class PiCOM:
         with open('./signals/' + signal,'w') as f:
             f.write(message)
 
-        if ping() and os.system("scp -q ./signals/" + signal + " " + PI_USERNAME + "@" + PI_HOSTNAME + ':' + PI_PATH + signal) == 0:
+        if self.ping() and os.system("scp -q ./signals/" + signal + " " + self.PI_USERNAME + "@" + self.PI_HOSTNAME + ':' + self.PI_PATH + signal) == 0:
+            print(colored('Sent "' + signal + '" signal to Pi','yellow'))
             return True
         else:
+            print(colored('Failed to send "' + signal + '" signal to Pi','red'))
             return False
 

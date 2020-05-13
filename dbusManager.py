@@ -6,27 +6,27 @@ class DbusManager:
         self.player = None
 
     # Returns true if spotify can be reached
-    def connect_to_spotify():
+    def connect_to_spotify(self):
         try:
             self.player = MediaPlayer("spotify")
         except dbus.exceptions.DBusException:
             self.player = None
         return True if self.player else False
 
-    def get_song_name():
+    def get_song_name(self):
         if not self.player:
             return None
         return self.player.song_name()
 
-    def get_song_info():
+    def get_song_info(self):
         if not self.player:
             return None
         return self.player.song_string()
 
-    def isOpen():
+    def isOpen(self):
         return True if self.player else False
         
-    def isPlaying():
+    def isPlaying(self):
         if not self.player:
             return False
         try:
