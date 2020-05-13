@@ -7,18 +7,14 @@
 
 import signal # Used to respond to Ctrl+C events
 import sys
-#import os
 import time
 import json # Used to convert Dict to Str so we can send a text file to the pi
 from termcolor import colored
-from pprint import pprint as pp
+#from pprint import pprint as pp
 
 import piCOM
 import songData
 import dbusManager
-
-PI_NAME = 'beacon'
-PI_PATH = "/home/pi/lightRemote/pi/from_old_pi/lights/"
 
 class AbstractFSM():  
     def step(self):
@@ -32,10 +28,10 @@ class AbstractFSM():
         return self.__class__.__name__
 
     def IDLE(self):
-        raise Error("IDLE() is abstract, you must overwrite it if inheriting from abstractFSM")
+        raise Error("IDLE() is abstract, you must overwrite it if inheriting from AbstractFSM")
 
     def SHUTDOWN(self):
-        raise Error("SHUTDOWN() is abstract, you must overwrite it if inheriting from abstractFSM")
+        raise Error("SHUTDOWN() is abstract, you must overwrite it if inheriting from AbstractFSM")
 
     
 class MusicFSM(AbstractFSM):
@@ -73,13 +69,13 @@ class MusicFSM(AbstractFSM):
         # send the data to the pi
         self.musicPiCOM.sendSignal(signal, message)
 
-        self.song_id = self.musicSongData.song_id()
+        self.song_info = self.musicDbusManager.get_song_info()
         self.state = self.SPOTIFY_PLAYING
     
     def SPOTIFY_PLAYING(self):
         if not self.musicDbusManager.isPlaying():
             self.state = self.SHUTDOWN
-        elif self.song_id != self.musicSongData.song_id():
+        elif self.song_info != self.musicDbusManager.get_song_info():
             self.state = self.NEW_SONG
         else:
             self.state = self.SPOTIFY_PLAYING
@@ -126,7 +122,7 @@ class ReadingFSM(AbstractFSM):
 
 class FanFSM(AbstractFSM):
     def __init__(self):
-        self.state = self.IDLE
+        self.state = self.MUSIC
         self.fanPiCOM = piCOM.PiCOM()
 
         # TODO: setup monitoring functions (callbacks? interrupts?) to signal a notification
@@ -218,9 +214,9 @@ class ControlFSM:
 
 if __name__ == '__main__':
     controlFSM = ControlFSM()
-    #while(True):
-    for i in range(10):
+    while(True):
+    #for i in range(10):
         controlFSM.step()
         time.sleep(1)
 
-    controlFSM.SHUTDOWN(None, None)
+    #controlFSM.SHUTDOWN(None, None)
