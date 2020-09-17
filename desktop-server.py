@@ -59,15 +59,18 @@ class MusicFSM(AbstractFSM):
 
     def NEW_SONG(self):
         # get song data
+        self.musicSongData.init_sp()
+        
         self.musicSongData.set_playing_track()
         self.musicSongData.set_audio_features()
         
         # package up data for the pi
         message = json.dumps(self.musicSongData.get_audio_features())
-        signal = "audio_features"
+        signal = "music"
         
         # send the data to the pi
         self.musicPiCOM.sendSignal(signal, message)
+        #self.musicPiCOM.sendSignal("audio_features", message)
 
         self.song_info = self.musicDbusManager.get_song_info()
         self.state = self.SPOTIFY_PLAYING
@@ -81,10 +84,10 @@ class MusicFSM(AbstractFSM):
             self.state = self.SPOTIFY_PLAYING
 
     def SHUTDOWN(self):
-        message = dict()
-        message['is_playing'] = False
-        signal = "audio_features"
+        message = {'is_playing' : False}
+        signal = "music"
         self.musicPiCOM.sendSignal(signal, message)
+        self.musicPiCOM.sendSignal("audio_features", message)
         self.state = self.IDLE
 
     
@@ -173,7 +176,7 @@ class FanFSM(AbstractFSM):
     def NOTIFY(self):
         message = dict()
         message['fan_on'] = True
-        message['mode'] = 'FX'
+        message['mode'] = 'NOTIFY'
         signal = 'fan'
         self.fanPiCOM.sendSignal(signal, message)
         self.state = self.IDLE
