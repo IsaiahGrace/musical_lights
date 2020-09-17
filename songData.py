@@ -11,11 +11,6 @@ class SongData():
     PORT_NUMBER = 8080
     SCOPE = 'user-read-currently-playing'
     CACHE = '.spotipyoauthcache'
-
-    def __init__(self):
-        self.init_sp()
-        playing_track = None
-        audio_features = None
             
     def token(self):
         # Refresh the token if needed.
@@ -32,11 +27,7 @@ class SongData():
         print(colored('Refreshed token from Spotify','yellow'))
         
     def set_playing_track(self):
-        try:
-            self.playing_track = self.sp.current_user_playing_track()
-        except spotipy.exceptions.SpotifyException:
-            self.init_sp()
-            self.playing_track = self.sp.current_user_playing_track()
+        self.playing_track = self.sp.current_user_playing_track()
         
     def get_playing_track(self):
         # returns a god awful dict from the spotify API
@@ -44,15 +35,7 @@ class SongData():
 
     def set_audio_features(self):
         song_id = self.playing_track['item']['uri']
-
-        # I'd rather use a GOTO here, but Python doesn't have it
-        # I'm not sure what a better solution here is that doesn't involve writing the code twice...
-        try:
-            self.audio_features = self.sp.audio_features([song_id])[0]
-        except spotipy.exceptions.SpotifyException:
-            self.init_sp()
-            self.audio_features = self.sp.audio_features([song_id])[0]
-            
+        self.audio_features = self.sp.audio_features([song_id])[0]
             
         # Add some more info to the dict to help out the Pi
         self.audio_features['song_id']    = song_id
