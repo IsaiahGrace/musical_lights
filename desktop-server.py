@@ -5,6 +5,7 @@
 
 # This is an attempt to re-write the send_music_to_pi script with a sane ammount of bodging
 
+import curses
 import signal # Used to respond to Ctrl+C events
 import sys
 import time
@@ -16,9 +17,11 @@ import piCOM
 import songData
 import dbusManager
 
-class AbstractFSM():  
+class AbstractFSM():
+    messages = []
+    
     def step(self):
-        print(colored(self.get_name() + ": " + self.get_state(),'green'))
+        #print(colored(self.get_name() + ": " + self.get_state(),'green'))
         self.state()
 
     def get_state(self):
@@ -26,6 +29,11 @@ class AbstractFSM():
 
     def get_name(self):
         return self.__class__.__name__
+
+    def collect_messages(self):
+        collection = '\n'.join(self.messages)
+        self.messages = []
+        return collection
 
     def IDLE(self):
         raise Error("IDLE() is abstract, you must overwrite it if inheriting from AbstractFSM")
@@ -37,48 +45,55 @@ class AbstractFSM():
 class MusicFSM(AbstractFSM):
     def __init__(self):
         self.state = self.IDLE
-        self.musicDbusManager = dbusManager.DbusManager()
-        self.musicPiCOM = piCOM.PiCOM()
-        self.musicSongData = songData.SongData()
+        self.prints = []
+        self.dbusManager = dbusManager.DbusManager()
+        self.piCOM = piCOM.PiCOM()
+        self.songData = songData.SongData()
         self.song_id = None
         
     def IDLE(self):
         # Only leave IDLE state if spotify is open and we can contact the Pi
-        if self.musicDbusManager.connect_to_spotify() and self.musicPiCOM.ping():
+        if self.dbusManager.connect_to_spotify() and self.piCOM.ping():
             self.state = self.SPOTIFY_PAUSED
         else:
             self.state = self.IDLE
+        self.messages.extend(self.piCOM.collect_messages())
+        
 
     def SPOTIFY_PAUSED(self):
-        if not self.musicDbusManager.isOpen():
+        if not self.dbusManager.isOpen():
             self.state = self.SHUTDOWN
-        elif self.musicDbusManager.isPlaying():
+        elif self.dbusManager.isPlaying():
             self.state = self.NEW_SONG
         else:
             self.state = self.SPOTIFY_PAUSED
+        
 
     def NEW_SONG(self):
         # get song data
-        self.musicSongData.init_sp()
+        self.songData.init_sp()
         
-        self.musicSongData.set_playing_track()
-        self.musicSongData.set_audio_features()
+        self.songData.set_playing_track()
+        self.songData.set_audio_features()
         
         # package up data for the pi
-        message = json.dumps(self.musicSongData.get_audio_features())
+        message = json.dumps(self.songData.get_audio_features())
         signal = "music"
         
         # send the data to the pi
-        self.musicPiCOM.sendSignal(signal, message)
+        self.piCOM.sendSignal(signal, message)
         #self.musicPiCOM.sendSignal("audio_features", message)
 
-        self.song_info = self.musicDbusManager.get_song_info()
+        self.song_info = self.dbusManager.get_song_info()
         self.state = self.SPOTIFY_PLAYING
-    
+        self.messages.extend(self.songData.collect_messages())
+        self.messages.extend(self.piCOM.collect_messages())
+
+        
     def SPOTIFY_PLAYING(self):
-        if not self.musicDbusManager.isPlaying():
+        if not self.dbusManager.isPlaying():
             self.state = self.SHUTDOWN
-        elif self.song_info != self.musicDbusManager.get_song_info():
+        elif self.song_info != self.dbusManager.get_song_info():
             self.state = self.NEW_SONG
         else:
             self.state = self.SPOTIFY_PLAYING
@@ -86,15 +101,15 @@ class MusicFSM(AbstractFSM):
     def SHUTDOWN(self):
         message = {'is_playing' : False}
         signal = "music"
-        self.musicPiCOM.sendSignal(signal, message)
-        self.musicPiCOM.sendSignal("audio_features", message)
+        self.piCOM.sendSignal(signal, message)
+        self.piCOM.sendSignal("audio_features", message)
         self.state = self.IDLE
-
+        self.messages.extend(self.piCOM.collect_messages())
     
 class ReadingFSM(AbstractFSM):
     def __init__(self):
         self.state = self.IDLE
-        self.readingPiCOM = piCOM.PiCOM()
+        self.piCOM = piCOM.PiCOM()
         self.timeout = 0
         
     def IDLE(self):
@@ -105,8 +120,9 @@ class ReadingFSM(AbstractFSM):
         message = dict()
         message['reading'] = True
         signal = 'reading'
-        self.readingPiCOM.sendSignal(signal, message)
+        self.piCOM.sendSignal(signal, message)
         self.state = self.READING
+        self.messages.extend(self.piCOM.collect_messages())
     
     def READING(self):
         # TODO: decriment timeout, maybe with time.time?
@@ -119,14 +135,15 @@ class ReadingFSM(AbstractFSM):
         message = dict()
         message['reading'] = False
         signal = 'reading'
-        self.readingPiCOM.sendSignal(signal, message)
+        self.piCOM.sendSignal(signal, message)
         self.state = self.IDLE
+        self.messages.extend(self.piCOM.collect_messages())
 
 
 class FanFSM(AbstractFSM):
     def __init__(self):
         self.state = self.MUSIC
-        self.fanPiCOM = piCOM.PiCOM()
+        self.piCOM = piCOM.PiCOM()
 
         # TODO: setup monitoring functions (callbacks? interrupts?) to signal a notification
         self.notification = None
@@ -158,9 +175,11 @@ class FanFSM(AbstractFSM):
         message['fan_on'] = True
         message['mode'] = 'MUSIC'
         signal = 'fan'
-        self.fanPiCOM.sendSignal(signal, message)
+        self.piCOM.sendSignal(signal, message)
         self.musicMode = False
         self.state = self.IDLE
+        self.messages.extend(self.piCOM.collect_messages())
+
     
     def FX(self):
         message = dict()
@@ -168,9 +187,10 @@ class FanFSM(AbstractFSM):
         message['mode'] = 'FX'
         message['FX'] = fxNum
         signal = 'fan'
-        self.fanPiCOM.sendSignal(signal, message)
+        self.piCOM.sendSignal(signal, message)
         self.fxMode = False
         self.state = self.IDLE
+        self.messages.extend(self.piCOM.collect_messages())
 
 
     def NOTIFY(self):
@@ -178,48 +198,104 @@ class FanFSM(AbstractFSM):
         message['fan_on'] = True
         message['mode'] = 'NOTIFY'
         signal = 'fan'
-        self.fanPiCOM.sendSignal(signal, message)
+        self.piCOM.sendSignal(signal, message)
         self.state = self.IDLE
-        pass
+        self.messages.extend(self.piCOM.collect_messages())
     
     def SHUTDOWN(self):
         message = dict()
         message['fan_on'] = False
         signal = 'fan'
-        self.fanPiCOM.sendSignal(signal, message)
+        self.piCOM.sendSignal(signal, message)
         self.state = self.IDLE
+        self.messages.extend(self.piCOM.collect_messages())
         
 
 # This class is the top level controller for our FSMs that will coordinate the efforts of the other classes
 class ControlFSM:
     def __init__(self):
-        self.FSMs = [MusicFSM(), ReadingFSM(), FanFSM()] #, fanFSM()] # maybe add another fanFSM to have seperate fan control?
         signal.signal(signal.SIGINT, self.SHUTDOWN)
         signal.signal(signal.SIGTERM, self.SHUTDOWN)
 
+    
+    def start(self):
+        curses.wrapper(self._start)
+        
+        
+    def _start(self, stdscr):
+        self.stdscr = stdscr
+        self.statesWin = curses.newwin(4, curses.COLS - 1, 3, 0)
+        self.msgWin = curses.newwin(20, curses.COLS - 1, 9, 0)
+        self.stdscr.addstr(0, (curses.COLS // 2) - 7, 'Musical Lights', curses.A_STANDOUT)
+        self.FSMs = [MusicFSM(), FanFSM(), ReadingFSM()] # ommited ReadingFSM
+
+        
+        # Write the FSM titles
+        for idx, FSM in enumerate(self.FSMs):
+            x = 1 + (idx * ((curses.COLS - 3) // len(self.FSMs)))
+            self.statesWin.addstr(1, x, FSM.get_name())
+
+        # Wite the MSG title
+        self.msgWin.addstr(1, 1, 'Messages', curses.A_STANDOUT)
+
+        # Draw borders on the windows
+        self.statesWin.border()
+        self.msgWin.border()
+
+        self.statesWin.noutrefresh()
+        self.msgWin.noutrefresh()
+        curses.doupdate()
+        
+        while(True):
+            self.printStates()
+            self.printMessages()
+            self.msgWin.noutrefresh()
+            self.statesWin.noutrefresh()
+            curses.doupdate()
+            time.sleep(1)
+            self.step()
+
+            
+    def printStates(self):
+        for idx, FSM in enumerate(self.FSMs):
+            x = 1 + (idx * ((curses.COLS - 3) // len(self.FSMs)))
+            self.statesWin.addstr(2, x, FSM.get_state())
+
+
+    def printMessages(self):
+        #self.msgWin.clear()
+        #self.msgWin.border()
+        for idx, FSM in enumerate(self.FSMs):
+            x = 1 + (idx * ((curses.COLS - 3) // len(self.FSMs)))
+            self.msgWin.addstr(2, x, FSM.collect_messages())
+
+    
     def step(self):
         for FSM in self.FSMs:
             # Evaluate the FSM as many times as necessary so that a state repeats
             old_state = None
-            while(FSM.get_state() != old_state):
-                old_state = FSM.get_state()
+            while((old_state := FSM.get_state()) != old_state):
                 FSM.step()
-                # That means that each element in the iterable FSMs must be a class with the step() function defined
+                # This means that each element in the iterable FSMs must be a class with the step() function defined
 
+                
     def SHUTDOWN(self, signum, frame):
-        # shutdown all the lights
+        # shutdown all the l.ights
         print(colored('SHUTDOWN! lights turning off','red'))
+        self.stdscr.addstr(1,curses.COLS // 2, 'SHUTDOWN')
+        self.stdscr.noutrefresh()
+        curses.doupdate()
+        
         for FSM in self.FSMs:
             FSM.SHUTDOWN()
+            self.printMessages()
+            self.msgWin.noutrefresh()
+            curses.doupdate()
 
         sys.exit(0)
     
 
 if __name__ == '__main__':
     controlFSM = ControlFSM()
-    while(True):
-    #for i in range(10):
-        controlFSM.step()
-        time.sleep(1)
-
-    #controlFSM.SHUTDOWN(None, None)
+    controlFSM.start()
+    

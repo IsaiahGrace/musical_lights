@@ -11,7 +11,11 @@ class SongData():
     PORT_NUMBER = 8080
     SCOPE = 'user-read-currently-playing'
     CACHE = '.spotipyoauthcache'
-            
+
+    def __init__(self):
+        self.messages = []
+
+        
     def token(self):
         # Refresh the token if needed.
         # This will not call the spotify API unless the token in cache is expired
@@ -24,7 +28,8 @@ class SongData():
     def init_sp(self):
         # construct the Spotipy API object
         self.sp = spotipy.Spotify(auth=self.token())
-        print(colored('Refreshed token from Spotify','yellow'))
+        #print(colored('Refreshed token from Spotify','yellow'))
+        self.messages.append('Refreshed token from Spotify')
         
     def set_playing_track(self):
         self.playing_track = self.sp.current_user_playing_track()
@@ -43,7 +48,12 @@ class SongData():
         self.audio_features['artist']     = self.playing_track['item']['artists'][0]['name']
         self.audio_features['is_playing'] = self.playing_track['is_playing']
         
-        print(colored('Got info about "' + self.audio_features['name'] + '" from Spotify','yellow'))
+        #print(colored('Got info about "' + self.audio_features['name'] + '" from Spotify','yellow'))
+        self.messages.append('Got info about "' + self.audio_features['name'] + '" from Spotify')
+
+
+    def collect_messages(self):
+        return self.messages
         
     def get_audio_features(self):
         return self.audio_features
