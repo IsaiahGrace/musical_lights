@@ -14,32 +14,31 @@ from termcolor import colored
 #from pprint import pprint as pp
 
 import piCOM
+import planckCOM
 import songData
 import dbusManager
 
 class AbstractFSM():
-    messages = []
-    
     def step(self):
         #print(colored(self.get_name() + ": " + self.get_state(),'green'))
         self.state()
 
     def get_state(self):
         return self.state.__name__
-
+    
     def get_name(self):
         return self.__class__.__name__
-
+    
     def collect_messages(self):
-        collection = '\n'.join(self.messages)
+        collection = self.messages
         self.messages = []
         return collection
-
+    
     def IDLE(self):
-        raise Error("IDLE() is abstract, you must overwrite it if inheriting from AbstractFSM")
-
+        raise Exception("IDLE() is abstract, you must overwrite it if inheriting from AbstractFSM")
+    
     def SHUTDOWN(self):
-        raise Error("SHUTDOWN() is abstract, you must overwrite it if inheriting from AbstractFSM")
+        raise Exception("SHUTDOWN() is abstract, you must overwrite it if inheriting from AbstractFSM")
 
     
 class MusicFSM(AbstractFSM):
@@ -48,16 +47,22 @@ class MusicFSM(AbstractFSM):
         self.prints = []
         self.dbusManager = dbusManager.DbusManager()
         self.piCOM = piCOM.PiCOM()
+        self.planckCOM = planckCOM.PlanckCOM()
         self.songData = songData.SongData()
         self.song_id = None
+        self.messages = []
         
     def IDLE(self):
         # Only leave IDLE state if spotify is open and we can contact the Pi
-        if self.dbusManager.connect_to_spotify() and self.piCOM.ping():
+        connection = self.dbusManager.connect_to_spotify()
+        ping = self.piCOM.ping() or self.planckCOM.ping() # This is OR at the moment...
+        
+        if connection and ping:
             self.state = self.SPOTIFY_PAUSED
         else:
             self.state = self.IDLE
         self.messages.extend(self.piCOM.collect_messages())
+        self.messages.extend(self.planckCOM.collect_messages())
         
 
     def SPOTIFY_PAUSED(self):
@@ -77,17 +82,19 @@ class MusicFSM(AbstractFSM):
         self.songData.set_audio_features()
         
         # package up data for the pi
-        message = json.dumps(self.songData.get_audio_features())
+        message = self.songData.get_audio_features()
         signal = "music"
         
         # send the data to the pi
-        self.piCOM.sendSignal(signal, message)
-        #self.musicPiCOM.sendSignal("audio_features", message)
+        self.piCOM.sendSignal(signal, json.dumps(message))
+        self.planckCOM.sendSignal(signal, message)
+        self.messages.extend(["Started song: " + message['name'] + " by " + message['artist']])
 
         self.song_info = self.dbusManager.get_song_info()
         self.state = self.SPOTIFY_PLAYING
         self.messages.extend(self.songData.collect_messages())
         self.messages.extend(self.piCOM.collect_messages())
+        self.messages.extend(self.planckCOM.collect_messages())
 
         
     def SPOTIFY_PLAYING(self):
@@ -98,24 +105,34 @@ class MusicFSM(AbstractFSM):
         else:
             self.state = self.SPOTIFY_PLAYING
 
+            
     def SHUTDOWN(self):
         message = {'is_playing' : False}
         signal = "music"
         self.piCOM.sendSignal(signal, message)
-        self.piCOM.sendSignal("audio_features", message)
+        self.planckCOM.sendSignal(signal, message)
+
+        # I think this is only here for backwards compatability
+        #self.piCOM.sendSignal("audio_features", message)
+        
         self.state = self.IDLE
         self.messages.extend(self.piCOM.collect_messages())
-    
+        self.messages.extend(self.planckCOM.collect_messages())
+
+        
 class ReadingFSM(AbstractFSM):
     def __init__(self):
         self.state = self.IDLE
         self.piCOM = piCOM.PiCOM()
         self.timeout = 0
+        self.messages = []
+
         
     def IDLE(self):
         self.state = self.IDLE
         # We've got to figure out how to initiate reading mode..
 
+        
     def START_READING(self):
         message = dict()
         message['reading'] = True
@@ -123,7 +140,8 @@ class ReadingFSM(AbstractFSM):
         self.piCOM.sendSignal(signal, message)
         self.state = self.READING
         self.messages.extend(self.piCOM.collect_messages())
-    
+
+        
     def READING(self):
         # TODO: decriment timeout, maybe with time.time?
         if timeout == 0:
@@ -131,6 +149,7 @@ class ReadingFSM(AbstractFSM):
         else:
             self.state = self.READING
 
+            
     def SHUTDOWN(self):
         message = dict()
         message['reading'] = False
@@ -157,6 +176,9 @@ class FanFSM(AbstractFSM):
 
         # TODO: setup a system to turn off the fan lights
         self.shutdown = False
+
+        self.messages = []
+
         
     def IDLE(self):
         if self.notification != None:
@@ -169,6 +191,7 @@ class FanFSM(AbstractFSM):
             self.state = self.SHUTDOWN
         else:
             self.state = self.IDLE
+
             
     def MUSIC(self):
         message = dict()
@@ -201,7 +224,8 @@ class FanFSM(AbstractFSM):
         self.piCOM.sendSignal(signal, message)
         self.state = self.IDLE
         self.messages.extend(self.piCOM.collect_messages())
-    
+
+        
     def SHUTDOWN(self):
         message = dict()
         message['fan_on'] = False
@@ -216,19 +240,26 @@ class ControlFSM:
     def __init__(self):
         signal.signal(signal.SIGINT, self.SHUTDOWN)
         signal.signal(signal.SIGTERM, self.SHUTDOWN)
-
+        pass
     
     def start(self):
         curses.wrapper(self._start)
         
         
     def _start(self, stdscr):
+
+        # This tells curses to use our terminal color palette
+        curses.use_default_colors()
+        for i in range(0, curses.COLORS):
+            curses.init_pair(i, i, -1);
+
         self.stdscr = stdscr
         self.statesWin = curses.newwin(4, curses.COLS - 1, 3, 0)
         self.msgWin = curses.newwin(20, curses.COLS - 1, 9, 0)
         self.stdscr.addstr(0, (curses.COLS // 2) - 7, 'Musical Lights', curses.A_STANDOUT)
-        self.FSMs = [MusicFSM(), FanFSM(), ReadingFSM()] # ommited ReadingFSM
+        self.FSMs = [MusicFSM(), FanFSM()] # ommited ReadingFSM
 
+        #curses.curs_set(0)
         
         # Write the FSM titles
         for idx, FSM in enumerate(self.FSMs):
@@ -236,7 +267,7 @@ class ControlFSM:
             self.statesWin.addstr(1, x, FSM.get_name())
 
         # Wite the MSG title
-        self.msgWin.addstr(1, 1, 'Messages', curses.A_STANDOUT)
+        self.msgWin.addstr(1, 1, 'Messages:', curses.A_STANDOUT)
 
         # Draw borders on the windows
         self.statesWin.border()
@@ -252,29 +283,45 @@ class ControlFSM:
             self.msgWin.noutrefresh()
             self.statesWin.noutrefresh()
             curses.doupdate()
-            time.sleep(1)
+            time.sleep(0.25)
             self.step()
 
             
     def printStates(self):
+        self.statesWin.move(2,1)
+        self.statesWin.clrtoeol()
+        self.statesWin.border()
         for idx, FSM in enumerate(self.FSMs):
             x = 1 + (idx * ((curses.COLS - 3) // len(self.FSMs)))
             self.statesWin.addstr(2, x, FSM.get_state())
 
 
     def printMessages(self):
-        #self.msgWin.clear()
-        #self.msgWin.border()
+        self.msgWin.addstr(1, curses.COLS // 2, time.ctime())
         for idx, FSM in enumerate(self.FSMs):
             x = 1 + (idx * ((curses.COLS - 3) // len(self.FSMs)))
-            self.msgWin.addstr(2, x, FSM.collect_messages())
+            y = 2 + (idx * ((20 - 3) // len(self.FSMs)))
+            self.msgWin.addstr(y, 1, FSM.get_name())
+            new_messages = FSM.collect_messages()
+            
+            if len(new_messages) != 0:
+                for clr_row in range(y+1,2 + (idx+1 * ((20 - 3) // len(self.FSMs)))):
+                    self.msgWin.move(clr_row,1)
+                    self.msgWin.clrtoeol()
+                    
+            for idy, message in enumerate(new_messages):
+                self.msgWin.move(idy + y + 1, 1)
+                self.msgWin.clrtoeol()
+                self.msgWin.addstr(idy + y + 1, 1, message)
+        self.msgWin.border()
 
     
     def step(self):
         for FSM in self.FSMs:
             # Evaluate the FSM as many times as necessary so that a state repeats
             old_state = None
-            while((old_state := FSM.get_state()) != old_state):
+            while (FSM.get_state() != old_state):
+                old_state = FSM.get_state()
                 FSM.step()
                 # This means that each element in the iterable FSMs must be a class with the step() function defined
 
@@ -296,6 +343,11 @@ class ControlFSM:
     
 
 if __name__ == '__main__':
-    controlFSM = ControlFSM()
-    controlFSM.start()
+    try:
+        controlFSM = ControlFSM()
+        controlFSM.start()
+    except Exception as e:
+        with open('logs-desktop-server','a') as f:
+            f.write(str(e))
+        raise e
     

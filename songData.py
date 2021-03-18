@@ -1,4 +1,5 @@
 import spotipy
+import random
 from termcolor import colored
 
 class SongData():
@@ -39,21 +40,33 @@ class SongData():
         return self.audio_features
 
     def set_audio_features(self):
-        song_id = self.playing_track['item']['uri']
-        self.audio_features = self.sp.audio_features([song_id])[0]
+        try:
+            song_id = self.playing_track['item']['uri']
+            self.audio_features = self.sp.audio_features([song_id])[0]
             
-        # Add some more info to the dict to help out the Pi
-        self.audio_features['song_id']    = song_id
-        self.audio_features['name']       = self.playing_track['item']['name']
-        self.audio_features['artist']     = self.playing_track['item']['artists'][0]['name']
-        self.audio_features['is_playing'] = self.playing_track['is_playing']
+            # Add some more info to the dict to help out the Pi
+            self.audio_features['song_id']    = song_id
+            self.audio_features['name']       = self.playing_track['item']['name']
+            self.audio_features['artist']     = self.playing_track['item']['artists'][0]['name']
+            self.audio_features['is_playing'] = self.playing_track['is_playing']
+            
+        except TypeError as e:
+            with open('logs-songData','a') as f:
+                f.write(str(e) + '\n')
+                
+            self.audio_features = {
+                'uri'        : None,
+                'valence'    : random.random(),
+                'song_id'    : None,
+                'name'       : 'Unknown',
+                'artist'     : 'Unknown',
+                'is_playing' : self.playing_track['is_playing']
+            }
         
-        #print(colored('Got info about "' + self.audio_features['name'] + '" from Spotify','yellow'))
-        self.messages.append('Got info about "' + self.audio_features['name'] + '" from Spotify')
-
-
     def collect_messages(self):
-        return self.messages
+        messages = self.messages
+        self.messages = []
+        return messages
         
     def get_audio_features(self):
         return self.audio_features
